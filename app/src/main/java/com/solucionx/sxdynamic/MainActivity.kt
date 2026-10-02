@@ -13,11 +13,13 @@ import android.widget.ScrollView
 import android.widget.SeekBar
 import android.widget.Switch
 import com.solucionx.sxdynamic.core.Diagnostics
+import com.solucionx.sxdynamic.core.NotificationListenerRuntime
 import com.solucionx.sxdynamic.core.OverlayServiceController
 import com.solucionx.sxdynamic.core.PermissionSnapshot
 import com.solucionx.sxdynamic.core.PermissionState
 import com.solucionx.sxdynamic.core.SystemSettingsNavigator
 import com.solucionx.sxdynamic.data.DynamicSettings
+import com.solucionx.sxdynamic.domain.IslandContent
 import com.solucionx.sxdynamic.ui.IslandPreviewView
 import com.solucionx.sxdynamic.ui.UiKit
 import com.solucionx.sxdynamic.ui.UiKit.dp
@@ -36,6 +38,10 @@ class MainActivity : Activity() {
     override fun onResume() {
         super.onResume()
         val settings = container.settingsRepository.read()
+        val permissions = PermissionState.read(this)
+        if (permissions.notificationAccess) {
+            NotificationListenerRuntime.requestRebindIfGranted(this)
+        }
         if (settings.enabled && Settings.canDrawOverlays(this)) {
             OverlayServiceController.start(this)
         }
@@ -63,7 +69,7 @@ class MainActivity : Activity() {
         root.addView(UiKit.spacer(this, 18))
         root.addView(IslandPreviewView(this))
         root.addView(UiKit.spacer(this, 16))
-        root.addView(masterPanel(settings, permissions.overlay))
+        root.addView(masterPanel(settings, permissions))
         root.addView(UiKit.spacer(this, 14))
         root.addView(permissionPanel(permissions))
         root.addView(UiKit.spacer(this, 14))
@@ -74,7 +80,7 @@ class MainActivity : Activity() {
         root.addView(diagnosticsPanel())
         root.addView(UiKit.spacer(this, 18))
         root.addView(
-            UiKit.subtitle(this, "SX Dynamic 0.1.1 · Solucionx · processamento local", 12f).apply {
+            UiKit.subtitle(this, "SX Dynamic 0.1.2 · Solucionx · processamento local", 12f).apply {
                 gravity = Gravity.CENTER
             },
         )
@@ -89,7 +95,7 @@ class MainActivity : Activity() {
         rebuilding = false
     }
 
-    private fun masterPanel(settings: DynamicSettings, overlayGranted: Boolean): View {
+    private fun masterPanel(settings: DynamicSettings, permissions: PermissionSnapshot): View {
         val panel = UiKit.panel(this)
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -101,10 +107,11 @@ class MainActivity : Activity() {
             addView(
                 UiKit.subtitle(
                     this@MainActivity,
-                    if (overlayGranted) {
-                        "Pronta para funcionar sobre outros apps"
-                    } else {
-                        "Libere a permissão de sobreposição para ativar"
+                    when {
+                        !permissions.overlay -> "Libere a permissão de sobreposição para ativar"
+                        !permissions.notificationAccess -> "A ilha funciona, mas não pode ler notificações até você liberar o acesso"
+                        !NotificationListenerRuntime.connected -> "Acesso liberado; reconectando ao serviço de notificações"
+                        else -> "Pronta para notificações e mídia"
                     },
                 ),
             )
@@ -146,6 +153,17 @@ class MainActivity : Activity() {
         }
         addPermissionRow(panel, "Acesso às notificações", permissions.notificationAccess, "Abrir") {
             SystemSettingsNavigator.notificationListener(this)
+        }
+        if (permissions.notificationAccess) {
+            addPermissionRow(
+                panel,
+                "Listener do sistema",
+                NotificationListenerRuntime.connected,
+                "Reconectar",
+            ) {
+                NotificationListenerRuntime.requestRebindIfGranted(this)
+                render()
+            }
         }
         if (Build.VERSION.SDK_INT >= 33) {
             addPermissionRow(panel, "Notificação do serviço", permissions.appNotifications, "Permitir") {
@@ -320,6 +338,29 @@ class MainActivity : Activity() {
             }
         }
         panel.addView(UiKit.spacer(this, 10))
+        panel.addView(
+            UiKit.actionButton(this, "Testar exibição da ilha").apply {
+                setOnClickListener {
+                    if (Settings.canDrawOverlays(this@MainActivity)) {
+                        container.settingsRepository.setEnabled(true)
+                        OverlayServiceController.start(this@MainActivity)
+                        container.overlayCoordinator.showNotification(
+                            IslandContent.NotificationEvent(
+                                key = "__sx_test__",
+                                packageName = packageName,
+                                appName = "Teste",
+                                title = "Notificação de teste",
+                                text = "Se você está vendo isto, o overlay está funcionando.",
+                                action = null,
+                            ),
+                        )
+                    } else {
+                        SystemSettingsNavigator.overlay(this@MainActivity)
+                    }
+                }
+            },
+        )
+        panel.addView(UiKit.spacer(this, 8))
         panel.addView(
             UiKit.actionButton(this, "Limpar diagnóstico").apply {
                 setOnClickListener {
