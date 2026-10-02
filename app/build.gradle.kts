@@ -10,8 +10,8 @@ android {
         applicationId = "com.solucionx.sxdynamic"
         minSdk = 29
         targetSdk = 36
-        versionCode = 4
-        versionName = "0.2.0"
+        versionCode = 5
+        versionName = "0.2.1"
     }
 
     signingConfigs {
