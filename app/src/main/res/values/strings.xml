@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">SX Dynamic</string>
+    <string name="overlay_channel_name">SX Dynamic ativo</string>
+    <string name="overlay_channel_description">Mantém a ilha dinâmica disponível sobre outros aplicativos.</string>
+    <string name="overlay_notification_title">SX Dynamic está ativo</string>
+    <string name="overlay_notification_text">Toque para abrir as configurações.</string>
+</resources>
