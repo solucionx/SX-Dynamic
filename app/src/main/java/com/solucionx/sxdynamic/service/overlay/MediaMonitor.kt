@@ -2,6 +2,7 @@ package com.solucionx.sxdynamic.service.overlay
 
 import android.content.ComponentName
 import android.content.Context
+import android.graphics.Bitmap
 import android.media.MediaMetadata
 import android.media.session.MediaController
 import android.media.session.MediaSessionManager
@@ -86,17 +87,30 @@ class MediaMonitor(
             coordinator.updateMedia(null)
             return
         }
+
         val metadata = controller.metadata
-        val title = metadata?.getString(MediaMetadata.METADATA_KEY_TITLE).orEmpty().ifBlank { "Mídia" }
+        val title = metadata?.getString(MediaMetadata.METADATA_KEY_TITLE).orEmpty()
+            .ifBlank { "Mídia" }
         val artist = metadata?.getString(MediaMetadata.METADATA_KEY_ARTIST).orEmpty()
+            .ifBlank { metadata?.getString(MediaMetadata.METADATA_KEY_ALBUM_ARTIST).orEmpty() }
         val playing = controller.playbackState?.state == PlaybackState.STATE_PLAYING
+        val artwork = extractArtwork(metadata)
+
         coordinator.updateMedia(
             IslandContent.Media(
                 packageName = controller.packageName,
                 title = title,
                 artist = artist,
                 playing = playing,
+                artwork = artwork,
             ),
         )
+    }
+
+    private fun extractArtwork(metadata: MediaMetadata?): Bitmap? {
+        metadata ?: return null
+        return metadata.getBitmap(MediaMetadata.METADATA_KEY_DISPLAY_ICON)
+            ?: metadata.getBitmap(MediaMetadata.METADATA_KEY_ART)
+            ?: metadata.getBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART)
     }
 }
