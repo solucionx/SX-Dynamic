@@ -140,8 +140,13 @@ object UpdateManager {
     }
 
     fun downloadState(context: Context): UpdateDownloadState {
-        val id = prefs(context).getLong(KEY_DOWNLOAD_ID, -1L)
+        val preferences = prefs(context)
+        val id = preferences.getLong(KEY_DOWNLOAD_ID, -1L)
         if (id <= 0L) return UpdateDownloadState.NONE
+
+        val release = cachedRelease(context)
+        val downloadedVersion = preferences.getString(KEY_DOWNLOAD_VERSION, "").orEmpty()
+        if (release == null || downloadedVersion != release.version) return UpdateDownloadState.NONE
         val manager = context.getSystemService(DownloadManager::class.java)
         val cursor = runCatching { manager.query(DownloadManager.Query().setFilterById(id)) }.getOrNull()
             ?: return UpdateDownloadState.NONE
