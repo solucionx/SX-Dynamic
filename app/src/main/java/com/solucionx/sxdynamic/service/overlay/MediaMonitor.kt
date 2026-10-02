@@ -103,6 +103,7 @@ class MediaMonitor(
                 artist = artist,
                 playing = playing,
                 artwork = artwork,
+                action = controller.sessionActivity,
             ),
         )
     }
