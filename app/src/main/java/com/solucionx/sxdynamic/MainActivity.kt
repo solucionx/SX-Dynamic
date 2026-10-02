@@ -39,7 +39,7 @@ class MainActivity : Activity() {
         super.onResume()
         val settings = container.settingsRepository.read()
         val permissions = PermissionState.read(this)
-        if (permissions.notificationAccess) {
+        if (permissions.notificationAccess && !NotificationListenerRuntime.connected) {
             NotificationListenerRuntime.requestRebindIfGranted(this)
         }
         if (settings.enabled && Settings.canDrawOverlays(this)) {
