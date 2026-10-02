@@ -5,23 +5,25 @@ import android.content.ComponentName
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
 import com.solucionx.sxdynamic.core.Diagnostics
+import com.solucionx.sxdynamic.core.NotificationListenerRuntime
 import com.solucionx.sxdynamic.core.appContainer
 import com.solucionx.sxdynamic.domain.IslandContent
 
 class SxNotificationListenerService : NotificationListenerService() {
     override fun onListenerConnected() {
         super.onListenerConnected()
-        Diagnostics.info("notifications", "Notification listener connected")
+        NotificationListenerRuntime.markConnected()
     }
 
     override fun onListenerDisconnected() {
-        Diagnostics.warn("notifications", "Notification listener disconnected")
+        NotificationListenerRuntime.markDisconnected()
         NotificationListenerService.requestRebind(ComponentName(this, SxNotificationListenerService::class.java))
         super.onListenerDisconnected()
     }
 
     override fun onNotificationPosted(sbn: StatusBarNotification?) {
         sbn ?: return
+        NotificationListenerRuntime.markReceived(sbn.packageName)
         if (NotificationRules.shouldIgnore(packageName, sbn)) return
 
         val settings = appContainer.settingsRepository.read()
