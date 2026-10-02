@@ -85,7 +85,7 @@ jobs:
 
           if [ -n "$RELEASE_ID" ]; then
             gh release upload "$TAG" dist/* --clobber
-            gh api               --method PATCH               "repos/${GITHUB_REPOSITORY}/releases/${RELEASE_ID}"               -f name="SX Dynamic v${VERSION}"               -f draft=true >/dev/null
+            gh api               --method PATCH               "repos/${GITHUB_REPOSITORY}/releases/${RELEASE_ID}"               -f name="SX Dynamic v${VERSION}"               -F draft=true >/dev/null
             echo "Draft release $TAG refreshed."
           else
             gh release create "$TAG" dist/*               --target "$GITHUB_SHA"               --title "SX Dynamic v${VERSION}"               --draft               --generate-notes
