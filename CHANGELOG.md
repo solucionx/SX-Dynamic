@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.2.1 - estabilidade na rotação da tela
+
+### Corrigido
+- A ilha agora é ancorada no centro superior da tela em todas as orientações.
+- O recorte lateral da câmera em modo paisagem não desloca mais a ilha para a esquerda ou direita.
+- O serviço reage a mudanças de rotação/configuração sem precisar reiniciar.
+- Adicionada escuta de alterações do display para reposicionar a janela assim que o HyperOS concluir a rotação.
+- A atualização de geometria aguarda brevemente o `WindowMetrics` estabilizar, evitando usar dimensões antigas da orientação anterior.
+- O ajuste vertical configurado pelo usuário continua sendo preservado após a rotação.
+
+
 ## 0.2.0 - atualização pelo GitHub Releases
 
 ### Adicionado
