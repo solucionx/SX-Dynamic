@@ -74,7 +74,7 @@ class MainActivity : Activity() {
         root.addView(diagnosticsPanel())
         root.addView(UiKit.spacer(this, 18))
         root.addView(
-            UiKit.subtitle(this, "SX Dynamic 0.1.0 · Solucionx · processamento local", 12f).apply {
+            UiKit.subtitle(this, "SX Dynamic 0.1.1 · Solucionx · processamento local", 12f).apply {
                 gravity = Gravity.CENTER
             },
         )
@@ -243,7 +243,7 @@ class MainActivity : Activity() {
         addSlider(panel, "Altura recolhida", settings.collapsedHeightDp, 28, 72, "dp", container.settingsRepository::setCollapsedHeight)
         addSlider(panel, "Largura expandida", settings.expandedWidthDp, 220, 480, "dp", container.settingsRepository::setExpandedWidth)
         addSlider(panel, "Altura expandida", settings.expandedHeightDp, 64, 180, "dp", container.settingsRepository::setExpandedHeight)
-        addSlider(panel, "Posição vertical", settings.verticalOffsetDp, -8, 64, "dp", container.settingsRepository::setVerticalOffset)
+        addSlider(panel, "Posição vertical", settings.verticalOffsetDp, -80, 80, "dp", container.settingsRepository::setVerticalOffset)
         addSlider(panel, "Animação", settings.animationDurationMs, 100, 700, "ms", container.settingsRepository::setAnimationDuration)
         addSlider(panel, "Tempo da notificação", settings.notificationDurationSeconds, 2, 15, "s", container.settingsRepository::setNotificationDuration)
         return panel
