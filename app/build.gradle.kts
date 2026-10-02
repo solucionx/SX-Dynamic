@@ -18,6 +18,7 @@ android {
         create("stableDebug") {
             storeFile = file("debug.keystore")
             storePassword = "sxdebug"
+            storeType = "PKCS12"
             keyAlias = "sxdebug"
             keyPassword = "sxdebug"
             enableV1Signing = true
