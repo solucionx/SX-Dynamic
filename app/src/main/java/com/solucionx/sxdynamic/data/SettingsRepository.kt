@@ -15,7 +15,7 @@ data class DynamicSettings(
     val collapsedHeightDp: Int = 34,
     val expandedWidthDp: Int = 338,
     val expandedHeightDp: Int = 92,
-    val verticalOffsetDp: Int = 6,
+    val verticalOffsetDp: Int = 0,
     val animationDurationMs: Int = 260,
     val notificationDurationSeconds: Int = 5,
     val haptics: Boolean = true,
@@ -41,7 +41,7 @@ class SettingsRepository(context: Context) : SharedPreferences.OnSharedPreferenc
         collapsedHeightDp = preferences.getInt(KEY_COLLAPSED_HEIGHT, 34).coerceIn(28, 72),
         expandedWidthDp = preferences.getInt(KEY_EXPANDED_WIDTH, 338).coerceIn(220, 480),
         expandedHeightDp = preferences.getInt(KEY_EXPANDED_HEIGHT, 92).coerceIn(64, 180),
-        verticalOffsetDp = preferences.getInt(KEY_VERTICAL_OFFSET, 6).coerceIn(-8, 64),
+        verticalOffsetDp = preferences.getInt(KEY_VERTICAL_OFFSET, 0).coerceIn(-80, 80),
         animationDurationMs = preferences.getInt(KEY_ANIMATION_DURATION, 260).coerceIn(100, 700),
         notificationDurationSeconds = preferences.getInt(KEY_NOTIFICATION_DURATION, 5).coerceIn(2, 15),
         haptics = preferences.getBoolean(KEY_HAPTICS, true),
@@ -60,7 +60,7 @@ class SettingsRepository(context: Context) : SharedPreferences.OnSharedPreferenc
     fun setCollapsedHeight(value: Int) = putInt(KEY_COLLAPSED_HEIGHT, value.coerceIn(28, 72))
     fun setExpandedWidth(value: Int) = putInt(KEY_EXPANDED_WIDTH, value.coerceIn(220, 480))
     fun setExpandedHeight(value: Int) = putInt(KEY_EXPANDED_HEIGHT, value.coerceIn(64, 180))
-    fun setVerticalOffset(value: Int) = putInt(KEY_VERTICAL_OFFSET, value.coerceIn(-8, 64))
+    fun setVerticalOffset(value: Int) = putInt(KEY_VERTICAL_OFFSET, value.coerceIn(-80, 80))
     fun setAnimationDuration(value: Int) = putInt(KEY_ANIMATION_DURATION, value.coerceIn(100, 700))
     fun setNotificationDuration(value: Int) = putInt(KEY_NOTIFICATION_DURATION, value.coerceIn(2, 15))
 
