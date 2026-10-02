@@ -22,6 +22,7 @@ sealed interface IslandContent {
         val artist: String,
         val playing: Boolean,
         val artwork: Bitmap? = null,
+        val action: PendingIntent? = null,
     ) : IslandContent
 
     data class Battery(
