@@ -3,6 +3,7 @@ package com.solucionx.sxdynamic
 import android.app.Application
 import com.solucionx.sxdynamic.core.AppContainer
 import com.solucionx.sxdynamic.core.Diagnostics
+import com.solucionx.sxdynamic.update.UpdateManager
 
 class SxDynamicApp : Application() {
     lateinit var container: AppContainer
@@ -13,5 +14,6 @@ class SxDynamicApp : Application() {
         Diagnostics.initialize(this)
         container = AppContainer(this)
         Diagnostics.info("app", "SX Dynamic process started")
+        UpdateManager.checkAsync(this, force = false)
     }
 }
