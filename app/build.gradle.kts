@@ -14,23 +14,10 @@ android {
         versionName = "0.1.1"
     }
 
-    signingConfigs {
-        create("stableDebug") {
-            storeFile = file("debug.keystore")
-            storePassword = "sxdebug"
-            storeType = "PKCS12"
-            keyAlias = "sxdebug"
-            keyPassword = "sxdebug"
-            enableV1Signing = true
-            enableV2Signing = true
-        }
-    }
-
     buildTypes {
         debug {
             applicationIdSuffix = ".debug"
             versionNameSuffix = "-debug"
-            signingConfig = signingConfigs.getByName("stableDebug")
         }
         release {
             isMinifyEnabled = false
