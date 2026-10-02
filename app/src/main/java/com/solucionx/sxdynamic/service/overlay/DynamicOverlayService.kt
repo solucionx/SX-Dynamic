@@ -101,11 +101,13 @@ class DynamicOverlayService : Service() {
             height,
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
                 WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
                 WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
             PixelFormat.TRANSLUCENT,
         ).apply {
             gravity = Gravity.TOP or Gravity.START
+            layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
         }
         applyPosition(width)
         runCatching {
@@ -176,9 +178,9 @@ class DynamicOverlayService : Service() {
         val baseY = if (geometry.cutoutCenterY != null) {
             geometry.cutoutCenterY - collapsedHeight / 2
         } else {
-            max(0, (geometry.statusBarTop - collapsedHeight) / 2)
+            (geometry.statusBarTop - collapsedHeight) / 2
         }
-        params.y = max(0, baseY + dp(latestSettings.verticalOffsetDp))
+        params.y = baseY + dp(latestSettings.verticalOffsetDp)
     }
 
     private fun displayGeometry(): Geometry {
