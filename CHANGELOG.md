@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.2.2 - ilha presa à câmera física
+
+### Corrigido
+- Corrigida a interpretação da rotação: a ilha deixa de ficar presa ao centro superior da interface e passa a acompanhar a posição física da câmera.
+- Em retrato, a ilha continua envolvendo a câmera no topo.
+- Em paisagem, a ilha é reposicionada para a lateral física correspondente à câmera, expandindo para dentro da tela.
+- O ajuste de posição vertical é rotacionado junto com o aparelho, evitando que uma calibração feita em retrato desloque a ilha no eixo errado em paisagem.
+- Quando o HyperOS omite temporariamente o `DisplayCutout` durante a rotação, o app reconstrói a posição da câmera usando a rotação atual e a distância física previamente observada até a borda.
+- Adicionada segunda confirmação de geometria após a rotação, sem polling contínuo.
+
+
 ## 0.2.1 - estabilidade na rotação da tela
 
 ### Corrigido
