@@ -17,6 +17,7 @@ import android.os.IBinder
 import android.os.Looper
 import android.provider.Settings
 import android.view.Gravity
+import android.view.Surface
 import android.view.WindowInsets
 import android.view.WindowManager
 import com.solucionx.sxdynamic.MainActivity
@@ -25,6 +26,7 @@ import com.solucionx.sxdynamic.core.Diagnostics
 import com.solucionx.sxdynamic.core.appContainer
 import com.solucionx.sxdynamic.data.DynamicSettings
 import com.solucionx.sxdynamic.domain.OverlayUiState
+import kotlin.math.abs
 import kotlin.math.max
 
 class DynamicOverlayService : Service() {
@@ -41,6 +43,12 @@ class DynamicOverlayService : Service() {
     private var sizeAnimator: ValueAnimator? = null
     private var latestState = OverlayUiState()
     private var latestSettings = DynamicSettings()
+
+    // Distance from the physical camera centre to the nearest physical edge.
+    // HyperOS may temporarily stop exposing DisplayCutout while rotating, so
+    // remembering this lets us reconstruct the correct camera side instead of
+    // falling back to the top-centre of the *content*.
+    private var rememberedCameraEdgeInsetPx: Int? = null
 
     private val relayoutRunnable = Runnable {
         if (!added) return@Runnable
@@ -140,7 +148,7 @@ class DynamicOverlayService : Service() {
             gravity = Gravity.TOP or Gravity.START
             layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
         }
-        applyPosition(width)
+        applyPosition(width, height)
         runCatching {
             windowManager.addView(view, params)
             added = true
@@ -154,6 +162,7 @@ class DynamicOverlayService : Service() {
     private fun render(animate: Boolean) {
         if (!added) return
         view.render(latestState, latestSettings)
+
         val desiredWidth = if (latestState.expanded) {
             latestSettings.expandedWidthDp
         } else {
@@ -164,6 +173,7 @@ class DynamicOverlayService : Service() {
         } else {
             latestSettings.collapsedHeightDp
         }
+
         val screenWidth = screenWidthPx()
         val targetWidth = dp(desiredWidth).coerceAtMost(max(dp(120), screenWidth - dp(16)))
         val targetHeight = dp(desiredHeight)
@@ -179,6 +189,7 @@ class DynamicOverlayService : Service() {
         val startWidth = params.width
         val startHeight = params.height
         if (startWidth == targetWidth && startHeight == targetHeight) return
+
         sizeAnimator?.cancel()
         sizeAnimator = ValueAnimator.ofFloat(0f, 1f).apply {
             duration = latestSettings.animationDurationMs.toLong()
@@ -197,27 +208,51 @@ class DynamicOverlayService : Service() {
         if (!added) return
         params.width = width
         params.height = height
-        applyPosition(width)
+        applyPosition(width, height)
         runCatching { windowManager.updateViewLayout(view, params) }
             .onFailure { Diagnostics.error("overlay", "Overlay layout update failed", it) }
     }
 
-    private fun applyPosition(width: Int) {
+    private fun applyPosition(width: Int, height: Int) {
         val geometry = displayGeometry()
-
-        // SX Dynamic deliberately stays top-center in every orientation. The
-        // camera is centered on the target Poco in portrait, while landscape
-        // cutout coordinates move to a side edge. Anchoring X to a side cutout
-        // is what previously made the island jump left/right after rotation.
-        params.x = (geometry.screenCenterX - width / 2)
-            .coerceIn(0, max(0, geometry.screenWidth - width))
-
+        val anchor = geometry.cameraAnchor ?: syntheticCameraAnchor(geometry)
         val collapsedHeight = dp(latestSettings.collapsedHeightDp)
-        val baseY = geometry.topCutoutCenterY?.let { cutoutCenterY ->
-            cutoutCenterY - collapsedHeight / 2
-        } ?: max(0, (geometry.statusBarTop - collapsedHeight) / 2)
 
-        params.y = baseY + dp(latestSettings.verticalOffsetDp)
+        // The user's portrait "vertical offset" is treated as an offset normal
+        // to the physical edge that contains the camera. This is important:
+        // after rotation the same calibration must rotate with the hardware,
+        // not keep moving in the screen's Y axis.
+        val correction = dp(latestSettings.verticalOffsetDp)
+
+        when (anchor.edge) {
+            CameraEdge.TOP -> {
+                params.x = (anchor.centerX - width / 2)
+                    .coerceIn(0, max(0, geometry.screenWidth - width))
+                params.y = anchor.centerY - collapsedHeight / 2 + correction
+            }
+
+            CameraEdge.LEFT -> {
+                // Keep the camera inside the left rounded cap; the island grows
+                // inward into usable content instead of being centred offscreen.
+                params.x = anchor.centerX - collapsedHeight / 2 + correction
+                params.y = (anchor.centerY - height / 2)
+                    .coerceIn(0, max(0, geometry.screenHeight - height))
+            }
+
+            CameraEdge.RIGHT -> {
+                // Mirror the left-edge behaviour so the camera remains inside
+                // the right rounded cap while the island expands inward.
+                params.x = anchor.centerX - width + collapsedHeight / 2 - correction
+                params.y = (anchor.centerY - height / 2)
+                    .coerceIn(0, max(0, geometry.screenHeight - height))
+            }
+
+            CameraEdge.BOTTOM -> {
+                params.x = (anchor.centerX - width / 2)
+                    .coerceIn(0, max(0, geometry.screenWidth - width))
+                params.y = anchor.centerY - height + collapsedHeight / 2 - correction
+            }
+        }
     }
 
     private fun displayGeometry(): Geometry {
@@ -225,53 +260,140 @@ class DynamicOverlayService : Service() {
             val metrics = windowManager.currentWindowMetrics
             val bounds = metrics.bounds
             val insets = metrics.windowInsets
+            val screenWidth = bounds.width()
+            val screenHeight = bounds.height()
             val statusTop = insets
                 .getInsetsIgnoringVisibility(WindowInsets.Type.statusBars())
                 .top
-            val screenWidth = bounds.width()
-            val screenCenter = screenWidth / 2
 
-            // Only a cutout that actually belongs to the top status-bar zone
-            // may influence vertical placement. In landscape the physical
-            // camera cutout is normally reported on a side edge and must not
-            // drag the island away from the top-center anchor.
-            val topZoneLimit = max(statusTop * 2, dp(96))
-            val topCutout = insets.displayCutout
+            val cutoutRects = insets.displayCutout
                 ?.boundingRects
                 .orEmpty()
-                .filter { rect ->
-                    rect.top <= dp(8) && rect.centerY() <= topZoneLimit
-                }
-                .minByOrNull { rect ->
-                    kotlin.math.abs(rect.centerX() - screenCenter)
-                }
+                .filter { it.width() > 0 && it.height() > 0 }
+
+            // A real camera/punch-hole is normally the smallest cutout region.
+            // Using the smallest region also avoids treating waterfall/corner
+            // decorations as the camera on devices that report more than one.
+            val cameraRect = cutoutRects.minByOrNull { rect ->
+                rect.width().toLong() * rect.height().toLong()
+            }
+
+            val cameraAnchor = cameraRect?.let { rect ->
+                val edge = nearestEdge(
+                    centerX = rect.centerX(),
+                    centerY = rect.centerY(),
+                    screenWidth = screenWidth,
+                    screenHeight = screenHeight,
+                )
+                val edgeInset = when (edge) {
+                    CameraEdge.TOP -> rect.centerY()
+                    CameraEdge.LEFT -> rect.centerX()
+                    CameraEdge.RIGHT -> screenWidth - rect.centerX()
+                    CameraEdge.BOTTOM -> screenHeight - rect.centerY()
+                }.coerceAtLeast(0)
+
+                if (edgeInset > 0) rememberedCameraEdgeInsetPx = edgeInset
+
+                CameraAnchor(
+                    centerX = rect.centerX(),
+                    centerY = rect.centerY(),
+                    edge = edge,
+                )
+            }
 
             return Geometry(
                 screenWidth = screenWidth,
-                screenCenterX = screenCenter,
-                topCutoutCenterY = topCutout?.centerY(),
+                screenHeight = screenHeight,
                 statusBarTop = statusTop,
+                rotation = currentRotation(),
+                cameraAnchor = cameraAnchor,
             )
         }
 
         @Suppress("DEPRECATION")
         val width = resources.displayMetrics.widthPixels
+        @Suppress("DEPRECATION")
+        val height = resources.displayMetrics.heightPixels
         val statusBarId = resources.getIdentifier("status_bar_height", "dimen", "android")
         val status = if (statusBarId > 0) resources.getDimensionPixelSize(statusBarId) else dp(24)
+
         return Geometry(
             screenWidth = width,
-            screenCenterX = width / 2,
-            topCutoutCenterY = null,
+            screenHeight = height,
             statusBarTop = status,
+            rotation = currentRotation(),
+            cameraAnchor = null,
         )
+    }
+
+    private fun syntheticCameraAnchor(geometry: Geometry): CameraAnchor {
+        val inset = rememberedCameraEdgeInsetPx
+            ?: max(dp(14), geometry.statusBarTop / 2)
+
+        return when (geometry.rotation) {
+            Surface.ROTATION_90 -> CameraAnchor(
+                centerX = geometry.screenWidth - inset,
+                centerY = geometry.screenHeight / 2,
+                edge = CameraEdge.RIGHT,
+            )
+
+            Surface.ROTATION_180 -> CameraAnchor(
+                centerX = geometry.screenWidth / 2,
+                centerY = geometry.screenHeight - inset,
+                edge = CameraEdge.BOTTOM,
+            )
+
+            Surface.ROTATION_270 -> CameraAnchor(
+                centerX = inset,
+                centerY = geometry.screenHeight / 2,
+                edge = CameraEdge.LEFT,
+            )
+
+            else -> CameraAnchor(
+                centerX = geometry.screenWidth / 2,
+                centerY = inset,
+                edge = CameraEdge.TOP,
+            )
+        }
+    }
+
+    private fun nearestEdge(
+        centerX: Int,
+        centerY: Int,
+        screenWidth: Int,
+        screenHeight: Int,
+    ): CameraEdge {
+        val top = centerY
+        val left = centerX
+        val right = screenWidth - centerX
+        val bottom = screenHeight - centerY
+        val minimum = minOf(top, left, right, bottom)
+
+        return when (minimum) {
+            left -> CameraEdge.LEFT
+            right -> CameraEdge.RIGHT
+            bottom -> CameraEdge.BOTTOM
+            else -> CameraEdge.TOP
+        }
+    }
+
+    private fun currentRotation(): Int {
+        if (Build.VERSION.SDK_INT >= 30) {
+            return runCatching { display?.rotation }.getOrNull() ?: Surface.ROTATION_0
+        }
+
+        @Suppress("DEPRECATION")
+        return windowManager.defaultDisplay.rotation
     }
 
     private fun scheduleGeometryRefresh() {
         mainHandler.removeCallbacks(relayoutRunnable)
-        // HyperOS can dispatch the rotation before WindowMetrics has settled.
-        // Waiting a fraction of a second prevents using the old portrait width
-        // on the first landscape frame (and vice-versa).
+
+        // HyperOS dispatches configuration/display changes before WindowMetrics
+        // always settles. Two passes make the correction deterministic without
+        // polling continuously or wasting battery.
         mainHandler.postDelayed(relayoutRunnable, DISPLAY_SETTLE_DELAY_MS)
+        mainHandler.postDelayed(relayoutRunnable, DISPLAY_CONFIRM_DELAY_MS)
     }
 
     private fun screenWidthPx(): Int = if (Build.VERSION.SDK_INT >= 30) {
@@ -323,16 +445,31 @@ class DynamicOverlayService : Service() {
 
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
 
+    private enum class CameraEdge {
+        TOP,
+        LEFT,
+        RIGHT,
+        BOTTOM,
+    }
+
+    private data class CameraAnchor(
+        val centerX: Int,
+        val centerY: Int,
+        val edge: CameraEdge,
+    )
+
     private data class Geometry(
         val screenWidth: Int,
-        val screenCenterX: Int,
-        val topCutoutCenterY: Int?,
+        val screenHeight: Int,
         val statusBarTop: Int,
+        val rotation: Int,
+        val cameraAnchor: CameraAnchor?,
     )
 
     private companion object {
         const val CHANNEL_ID = "sx_dynamic_overlay"
         const val NOTIFICATION_ID = 1107
         const val DISPLAY_SETTLE_DELAY_MS = 120L
+        const val DISPLAY_CONFIRM_DELAY_MS = 360L
     }
 }
