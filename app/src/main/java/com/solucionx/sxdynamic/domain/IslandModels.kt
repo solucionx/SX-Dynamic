@@ -1,6 +1,7 @@
 package com.solucionx.sxdynamic.domain
 
 import android.app.PendingIntent
+import android.graphics.Bitmap
 
 sealed interface IslandContent {
     data object Idle : IslandContent
@@ -20,6 +21,7 @@ sealed interface IslandContent {
         val title: String,
         val artist: String,
         val playing: Boolean,
+        val artwork: Bitmap? = null,
     ) : IslandContent
 
     data class Battery(
