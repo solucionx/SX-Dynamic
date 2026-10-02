@@ -3,7 +3,7 @@
 ## Princípios
 
 1. **Menor privilégio:** nenhuma permissão é adicionada sem função concreta.
-2. **Local-first:** a base não possui `INTERNET`.
+2. **Local-first:** notificações, mídia e preferências permanecem locais. A rede é usada somente para o atualizador oficial.
 3. **Sem persistência de conteúdo sensível:** título e texto de notificações são mantidos apenas em memória durante a exibição.
 4. **Sem analytics na fundação:** nenhum SDK de rastreamento foi incluído.
 5. **Falha segura:** se a permissão de overlay for removida, o serviço encerra o overlay em vez de tentar contornar o sistema.
@@ -16,6 +16,8 @@
 - `POST_NOTIFICATIONS`: usada para a notificação do serviço em primeiro plano em Android 13+.
 - `FOREGROUND_SERVICE_SPECIAL_USE`: usada para o serviço persistente de overlay em Android moderno.
 - `RECEIVE_BOOT_COMPLETED`: permite restaurar a função somente se ela já estiver habilitada pelo usuário.
+- `INTERNET`: consulta HTTPS ao GitHub Releases do repositório oficial e download do APK de atualização.
+- `REQUEST_INSTALL_PACKAGES`: permite encaminhar o APK baixado ao instalador do Android; nenhuma instalação silenciosa é tentada.
 
 ## Publicação
 
@@ -24,3 +26,10 @@ A classificação `specialUse` de serviço em primeiro plano deve ser declarada 
 ## Relato de vulnerabilidade
 
 Não publique segredos, tokens, chaves de assinatura ou dados pessoais em issues públicas.
+
+
+## Atualizador
+
+O atualizador aceita apenas releases publicadas em `solucionx/SX-Dynamic` e seleciona o APK compatível com o canal instalado. Releases em draft ou prerelease não são oferecidas pelo endpoint `releases/latest`.
+
+A confirmação final continua sob controle do instalador do Android. A assinatura de desenvolvimento versionada no repositório é exclusivamente para builds debug e não deve ser reutilizada como chave de produção.
