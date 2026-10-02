@@ -8,9 +8,13 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.content.res.Configuration
 import android.graphics.PixelFormat
+import android.hardware.display.DisplayManager
 import android.os.Build
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
 import android.provider.Settings
 import android.view.Gravity
 import android.view.WindowInsets
@@ -21,20 +25,38 @@ import com.solucionx.sxdynamic.core.Diagnostics
 import com.solucionx.sxdynamic.core.appContainer
 import com.solucionx.sxdynamic.data.DynamicSettings
 import com.solucionx.sxdynamic.domain.OverlayUiState
-import kotlin.math.abs
 import kotlin.math.max
 
 class DynamicOverlayService : Service() {
     private lateinit var windowManager: WindowManager
+    private lateinit var displayManager: DisplayManager
     private lateinit var view: DynamicIslandView
     private lateinit var mediaMonitor: MediaMonitor
     private lateinit var batteryMonitor: BatteryMonitor
     private lateinit var params: WindowManager.LayoutParams
 
+    private val mainHandler = Handler(Looper.getMainLooper())
+
     private var added = false
     private var sizeAnimator: ValueAnimator? = null
     private var latestState = OverlayUiState()
     private var latestSettings = DynamicSettings()
+
+    private val relayoutRunnable = Runnable {
+        if (!added) return@Runnable
+        sizeAnimator?.cancel()
+        render(animate = false)
+        Diagnostics.info("overlay", "Overlay geometry refreshed after display change")
+    }
+
+    private val displayListener = object : DisplayManager.DisplayListener {
+        override fun onDisplayAdded(displayId: Int) = Unit
+        override fun onDisplayRemoved(displayId: Int) = Unit
+
+        override fun onDisplayChanged(displayId: Int) {
+            scheduleGeometryRefresh()
+        }
+    }
 
     private val stateListener: (OverlayUiState) -> Unit = { state ->
         latestState = state
@@ -54,6 +76,7 @@ class DynamicOverlayService : Service() {
     override fun onCreate() {
         super.onCreate()
         windowManager = getSystemService(WindowManager::class.java)
+        displayManager = getSystemService(DisplayManager::class.java)
         mediaMonitor = MediaMonitor(this, appContainer.overlayCoordinator)
         batteryMonitor = BatteryMonitor(this, appContainer.overlayCoordinator)
         view = DynamicIslandView(this, appContainer.overlayCoordinator, mediaMonitor)
@@ -61,6 +84,7 @@ class DynamicOverlayService : Service() {
         latestState = appContainer.overlayCoordinator.snapshot()
         createNotificationChannel()
         startAsForeground()
+        displayManager.registerDisplayListener(displayListener, mainHandler)
         appContainer.overlayCoordinator.addListener(stateListener)
         appContainer.settingsRepository.addListener(settingsListener)
     }
@@ -78,8 +102,15 @@ class DynamicOverlayService : Service() {
         return START_STICKY
     }
 
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        scheduleGeometryRefresh()
+    }
+
     override fun onDestroy() {
+        mainHandler.removeCallbacks(relayoutRunnable)
         sizeAnimator?.cancel()
+        runCatching { displayManager.unregisterDisplayListener(displayListener) }
         batteryMonitor.stop()
         mediaMonitor.stop()
         appContainer.overlayCoordinator.removeListener(stateListener)
@@ -173,13 +204,19 @@ class DynamicOverlayService : Service() {
 
     private fun applyPosition(width: Int) {
         val geometry = displayGeometry()
-        params.x = (geometry.centerX - width / 2).coerceAtLeast(0)
+
+        // SX Dynamic deliberately stays top-center in every orientation. The
+        // camera is centered on the target Poco in portrait, while landscape
+        // cutout coordinates move to a side edge. Anchoring X to a side cutout
+        // is what previously made the island jump left/right after rotation.
+        params.x = (geometry.screenCenterX - width / 2)
+            .coerceIn(0, max(0, geometry.screenWidth - width))
+
         val collapsedHeight = dp(latestSettings.collapsedHeightDp)
-        val baseY = if (geometry.cutoutCenterY != null) {
-            geometry.cutoutCenterY - collapsedHeight / 2
-        } else {
-            (geometry.statusBarTop - collapsedHeight) / 2
-        }
+        val baseY = geometry.topCutoutCenterY?.let { cutoutCenterY ->
+            cutoutCenterY - collapsedHeight / 2
+        } ?: max(0, (geometry.statusBarTop - collapsedHeight) / 2)
+
         params.y = baseY + dp(latestSettings.verticalOffsetDp)
     }
 
@@ -188,13 +225,31 @@ class DynamicOverlayService : Service() {
             val metrics = windowManager.currentWindowMetrics
             val bounds = metrics.bounds
             val insets = metrics.windowInsets
-            val cutoutRects = insets.displayCutout?.boundingRects.orEmpty()
-            val screenCenter = bounds.width() / 2
-            val cutout = cutoutRects.minByOrNull { abs(it.centerX() - screenCenter) }
-            val statusTop = insets.getInsetsIgnoringVisibility(WindowInsets.Type.statusBars()).top
+            val statusTop = insets
+                .getInsetsIgnoringVisibility(WindowInsets.Type.statusBars())
+                .top
+            val screenWidth = bounds.width()
+            val screenCenter = screenWidth / 2
+
+            // Only a cutout that actually belongs to the top status-bar zone
+            // may influence vertical placement. In landscape the physical
+            // camera cutout is normally reported on a side edge and must not
+            // drag the island away from the top-center anchor.
+            val topZoneLimit = max(statusTop * 2, dp(96))
+            val topCutout = insets.displayCutout
+                ?.boundingRects
+                .orEmpty()
+                .filter { rect ->
+                    rect.top <= dp(8) && rect.centerY() <= topZoneLimit
+                }
+                .minByOrNull { rect ->
+                    kotlin.math.abs(rect.centerX() - screenCenter)
+                }
+
             return Geometry(
-                centerX = cutout?.centerX() ?: screenCenter,
-                cutoutCenterY = cutout?.centerY(),
+                screenWidth = screenWidth,
+                screenCenterX = screenCenter,
+                topCutoutCenterY = topCutout?.centerY(),
                 statusBarTop = statusTop,
             )
         }
@@ -203,7 +258,20 @@ class DynamicOverlayService : Service() {
         val width = resources.displayMetrics.widthPixels
         val statusBarId = resources.getIdentifier("status_bar_height", "dimen", "android")
         val status = if (statusBarId > 0) resources.getDimensionPixelSize(statusBarId) else dp(24)
-        return Geometry(width / 2, null, status)
+        return Geometry(
+            screenWidth = width,
+            screenCenterX = width / 2,
+            topCutoutCenterY = null,
+            statusBarTop = status,
+        )
+    }
+
+    private fun scheduleGeometryRefresh() {
+        mainHandler.removeCallbacks(relayoutRunnable)
+        // HyperOS can dispatch the rotation before WindowMetrics has settled.
+        // Waiting a fraction of a second prevents using the old portrait width
+        // on the first landscape frame (and vice-versa).
+        mainHandler.postDelayed(relayoutRunnable, DISPLAY_SETTLE_DELAY_MS)
     }
 
     private fun screenWidthPx(): Int = if (Build.VERSION.SDK_INT >= 30) {
@@ -256,13 +324,15 @@ class DynamicOverlayService : Service() {
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
 
     private data class Geometry(
-        val centerX: Int,
-        val cutoutCenterY: Int?,
+        val screenWidth: Int,
+        val screenCenterX: Int,
+        val topCutoutCenterY: Int?,
         val statusBarTop: Int,
     )
 
     private companion object {
         const val CHANNEL_ID = "sx_dynamic_overlay"
         const val NOTIFICATION_ID = 1107
+        const val DISPLAY_SETTLE_DELAY_MS = 120L
     }
 }
