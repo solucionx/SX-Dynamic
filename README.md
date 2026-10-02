@@ -6,7 +6,7 @@ O alvo inicial é o **Poco X8 Pro / HyperOS**, mas a arquitetura evita dependên
 
 ## Estado do projeto
 
-**v0.1.0 — fundação técnica**
+**v0.2.0 — fundação com atualização pelo GitHub Releases**
 
 A primeira base inclui:
 
@@ -33,14 +33,15 @@ app/
 │   ├── notification/     classificação de notificações
 │   ├── overlay/          janela, mídia, bateria e renderização
 │   └── boot/             restauração controlada
-└── ui/                   painel e identidade visual
+├── ui/                   painel e identidade visual
+└── update/               consulta de releases, download e instalação assistida
 ```
 
-A v0.1.0 usa **somente APIs da plataforma Android no runtime**. Isso reduz tamanho, consumo, superfície de dependências e risco de incompatibilidade em um componente que precisa permanecer estável em segundo plano.
+O runtime principal continua baseado em APIs da plataforma Android, com acesso HTTPS ao GitHub apenas para verificar e baixar atualizações publicadas. Isso reduz tamanho, consumo, superfície de dependências e risco de incompatibilidade em um componente que precisa permanecer estável em segundo plano.
 
 ## Privacidade
 
-SX Dynamic não precisa de internet para o funcionamento principal. O projeto não declara permissão `INTERNET` e não envia conteúdo de notificações para servidores.
+SX Dynamic não precisa de internet para a ilha, notificações ou mídia. A permissão `INTERNET` é usada somente pelo atualizador para consultar `solucionx/SX-Dynamic` no GitHub Releases e baixar um APK publicado. Conteúdo de notificações não é enviado.
 
 Conteúdo de notificações é processado em memória. O diagnóstico local registra apenas eventos técnicos e possui tamanho limitado.
 
@@ -49,7 +50,7 @@ Conteúdo de notificações é processado em memória. O diagnóstico local regi
 Requisitos:
 
 - JDK 17;
-- Android SDK 37;
+- Android SDK 36;
 - Android Gradle Plugin 9.4;
 - Gradle 9.6.0.
 
@@ -67,7 +68,9 @@ O app solicita somente permissões relacionadas às funções centrais:
 - acesso de Notification Listener: receber eventos de notificações e permitir acesso às sessões de mídia;
 - `POST_NOTIFICATIONS`: notificação do serviço em primeiro plano;
 - `FOREGROUND_SERVICE_SPECIAL_USE`: manter o overlay explicitamente ativado;
-- `RECEIVE_BOOT_COMPLETED`: restaurar a função quando ela já estava habilitada.
+- `RECEIVE_BOOT_COMPLETED`: restaurar a função quando ela já estava habilitada;
+- `INTERNET`: consultar e baixar versões publicadas no GitHub Releases;
+- `REQUEST_INSTALL_PACKAGES`: abrir o instalador do Android para concluir uma atualização baixada.
 
 Nenhuma permissão de Acessibilidade é usada.
 
@@ -88,3 +91,21 @@ Consulte `docs/QUALITY.md`, `docs/ARCHITECTURE.md` e `SECURITY.md`.
 ## Licença
 
 Copyright © Solucionx. Todos os direitos reservados, salvo definição posterior no repositório.
+
+
+## Atualizações
+
+O SX Dynamic verifica automaticamente a release pública mais recente do repositório oficial. A verificação também pode ser iniciada manualmente no próprio app.
+
+O fluxo é:
+
+1. GitHub Actions compila e valida a versão.
+2. O workflow `Draft Release` cria ou atualiza uma release em modo **draft**.
+3. Enquanto estiver em draft, a versão não é oferecida pelo app.
+4. Depois que o proprietário publica a release, o SX Dynamic detecta a nova versão.
+5. O APK é baixado pelo Android DownloadManager.
+6. O usuário confirma a instalação no instalador do Android.
+
+Android não permite que um app comum se atualize silenciosamente; a confirmação final de instalação permanece obrigatória.
+
+As builds de desenvolvimento usam uma assinatura de teste estável para permitir atualização por cima da versão anterior. Antes de distribuição pública de produção, a assinatura definitiva deve ficar protegida em GitHub Actions Secrets.
