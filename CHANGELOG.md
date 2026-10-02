@@ -1,9 +1,30 @@
 # Changelog
 
+## 0.2.0 - atualização pelo GitHub Releases
+
+### Adicionado
+- Verificação automática da release pública mais recente em `solucionx/SX-Dynamic`.
+- Botão **Verificar atualizações** dentro do aplicativo.
+- Painel com versão instalada, versão disponível, tamanho e notas da release.
+- Download do APK pelo `DownloadManager` do Android.
+- Notificação quando o APK termina de baixar.
+- Instalação assistida pelo instalador padrão do Android.
+- Solicitação segura de permissão para instalar APKs desconhecidos apenas quando necessária.
+- Cache local da release encontrada para reduzir chamadas ao GitHub.
+- Verificação automática limitada a uma janela de 12 horas.
+- Workflow **Draft Release**: compila, executa lint, gera APK + SHA-256 e cria/atualiza uma release em draft.
+- Releases em draft não são oferecidas ao app; a atualização só aparece depois que o proprietário publica a release.
+
+### Segurança
+- O app passa a declarar `INTERNET` exclusivamente para o atualizador.
+- Nenhum conteúdo de notificações ou mídia é enviado pela rotina de atualização.
+- Builds debug usam assinatura de teste estável para permitir atualização por cima durante o desenvolvimento.
+- A assinatura de produção deverá ser mantida fora do repositório, em GitHub Actions Secrets.
+
 ## 0.1.2 - robustez do listener de notificações
 
 ### Corrigido
-- O app agora detecta quando o acesso às notificações foi concedido, mas o listener ainda não conectou ao Android.
+- O app detecta quando o acesso às notificações foi concedido, mas o listener ainda não conectou ao Android.
 - Solicita reconexão do `NotificationListenerService` ao voltar das configurações.
 - Exibe separadamente o estado de "Acesso às notificações" e "Listener do sistema".
 - Registra, sem conteúdo sensível, quando uma notificação chega ao listener.
