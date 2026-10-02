@@ -23,10 +23,15 @@ import com.solucionx.sxdynamic.domain.IslandContent
 import com.solucionx.sxdynamic.ui.IslandPreviewView
 import com.solucionx.sxdynamic.ui.UiKit
 import com.solucionx.sxdynamic.ui.UiKit.dp
+import com.solucionx.sxdynamic.update.InstallUpdateResult
+import com.solucionx.sxdynamic.update.UpdateDownloadState
+import com.solucionx.sxdynamic.update.UpdateManager
 
 class MainActivity : Activity() {
     private val container get() = (application as SxDynamicApp).container
     private var rebuilding = false
+    private var updateChecking = false
+    private var updateMessage: String? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -71,6 +76,8 @@ class MainActivity : Activity() {
         root.addView(UiKit.spacer(this, 16))
         root.addView(masterPanel(settings, permissions))
         root.addView(UiKit.spacer(this, 14))
+        root.addView(updatePanel())
+        root.addView(UiKit.spacer(this, 14))
         root.addView(permissionPanel(permissions))
         root.addView(UiKit.spacer(this, 14))
         root.addView(featurePanel(settings))
@@ -80,7 +87,7 @@ class MainActivity : Activity() {
         root.addView(diagnosticsPanel())
         root.addView(UiKit.spacer(this, 18))
         root.addView(
-            UiKit.subtitle(this, "SX Dynamic 0.1.2 · Solucionx · processamento local", 12f).apply {
+            UiKit.subtitle(this, "SX Dynamic " + UpdateManager.currentVersion(this) + " · Solucionx", 12f).apply {
                 gravity = Gravity.CENTER
             },
         )
@@ -135,6 +142,135 @@ class MainActivity : Activity() {
             },
         )
         panel.addView(row)
+        return panel
+    }
+
+    private fun updatePanel(): View {
+        val panel = UiKit.panel(this)
+        val currentVersion = UpdateManager.currentVersion(this)
+        val release = UpdateManager.cachedRelease(this)
+        val downloadState = UpdateManager.downloadState(this)
+
+        panel.addView(UiKit.title(this, "Atualizações", 18f))
+        panel.addView(
+            UiKit.subtitle(
+                this,
+                "Versão instalada: " + currentVersion + ". O SX Dynamic verifica automaticamente as versões publicadas no GitHub Releases.",
+            ),
+        )
+
+        updateMessage?.let { message ->
+            panel.addView(UiKit.spacer(this, 8))
+            panel.addView(UiKit.subtitle(this, message, 12f))
+        }
+
+        if (release != null) {
+            panel.addView(UiKit.spacer(this, 10))
+            panel.addView(UiKit.title(this, "SX Dynamic v" + release.version, 15f))
+            val sizeText = if (release.sizeBytes > 0L) {
+                " · " + String.format("%.1f MB", release.sizeBytes / 1024f / 1024f)
+            } else {
+                ""
+            }
+            panel.addView(UiKit.subtitle(this, "Atualização disponível" + sizeText, 12f))
+            if (release.notes.isNotBlank()) {
+                val notes = release.notes.replace("\r", "").trim().take(420)
+                panel.addView(UiKit.spacer(this, 6))
+                panel.addView(UiKit.subtitle(this, notes, 11f))
+            }
+            panel.addView(UiKit.spacer(this, 10))
+
+            when (downloadState) {
+                UpdateDownloadState.SUCCESSFUL -> {
+                    panel.addView(
+                        UiKit.actionButton(this, "Instalar atualização").apply {
+                            setOnClickListener {
+                                when (val result = UpdateManager.installDownloaded(this@MainActivity)) {
+                                    InstallUpdateResult.Started -> {
+                                        updateMessage = "Instalador do Android aberto."
+                                    }
+                                    InstallUpdateResult.PermissionRequired -> {
+                                        updateMessage = "Autorize o SX Dynamic a instalar atualizações e volte para concluir."
+                                    }
+                                    InstallUpdateResult.MissingDownload -> {
+                                        updateMessage = "O APK baixado não foi encontrado. Baixe novamente."
+                                    }
+                                    is InstallUpdateResult.Failed -> {
+                                        updateMessage = "Não foi possível abrir o instalador: " + result.message
+                                    }
+                                }
+                                render()
+                            }
+                        },
+                    )
+                }
+
+                UpdateDownloadState.PENDING,
+                UpdateDownloadState.RUNNING,
+                UpdateDownloadState.PAUSED -> {
+                    panel.addView(
+                        UiKit.actionButton(this, "Baixando atualização…").apply {
+                            isEnabled = false
+                            alpha = 0.6f
+                        },
+                    )
+                }
+
+                UpdateDownloadState.FAILED,
+                UpdateDownloadState.NONE -> {
+                    panel.addView(
+                        UiKit.actionButton(
+                            this,
+                            if (downloadState == UpdateDownloadState.FAILED) "Baixar novamente" else "Baixar atualização",
+                        ).apply {
+                            setOnClickListener {
+                                runCatching { UpdateManager.enqueueDownload(this@MainActivity, release) }
+                                    .onSuccess {
+                                        updateMessage = "Download iniciado. Você será avisado quando estiver pronto para instalar."
+                                    }
+                                    .onFailure {
+                                        updateMessage = "Falha ao iniciar o download: " + it.message.orEmpty()
+                                    }
+                                render()
+                            }
+                        },
+                    )
+                }
+            }
+            panel.addView(UiKit.spacer(this, 8))
+        }
+
+        panel.addView(
+            UiKit.actionButton(
+                this,
+                if (updateChecking) "Verificando…" else "Verificar atualizações",
+            ).apply {
+                isEnabled = !updateChecking
+                if (updateChecking) alpha = 0.6f
+                setOnClickListener {
+                    updateChecking = true
+                    updateMessage = "Consultando o GitHub Releases…"
+                    render()
+                    UpdateManager.checkAsync(this@MainActivity, force = true) { result ->
+                        updateChecking = false
+                        updateMessage = result.fold(
+                            onSuccess = { available ->
+                                if (available == null) {
+                                    "Você já está usando a versão publicada mais recente."
+                                } else {
+                                    "SX Dynamic v" + available.version + " está disponível."
+                                }
+                            },
+                            onFailure = { error ->
+                                "Não foi possível verificar agora: " + error.message.orEmpty()
+                            },
+                        )
+                        render()
+                    }
+                }
+            },
+        )
+
         return panel
     }
 
